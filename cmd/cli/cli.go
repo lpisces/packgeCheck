@@ -116,6 +116,7 @@ func Run(c *ccli.Context) (err error) {
 	fd.WriteString("\xEF\xBB\xBF")
 	w := csv.NewWriter(fd)
 
+	w.Write([]string{"国际订单", "国内订单", "国内邮编", "快递100状态", "PostNL状态", "PostNL重量"})
 	for p := range packages {
 		if Conf.Debug {
 			log.Info(p)

@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	Retry = 5
+	Retry = 1
 	UA    = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36"
 )
 
@@ -30,7 +30,7 @@ type Package struct {
 	CNStatus          bool
 	NLStatus          bool
 	CompanyCode       string
-	Weight            float64
+	Weight            int64
 }
 
 func (p *Package) TraceNL() (err error) {
@@ -73,25 +73,40 @@ func (p *Package) TraceNL() (err error) {
 
 		// 检查状态码
 		if resp.StatusCode != http.StatusOK {
-			err = fmt.Errorf("access failed")
+			err = fmt.Errorf("status code: %d", resp.StatusCode)
 			return
 		}
 
 		// 获取内容
 		ioutil.WriteFile(cacheFile, body, 0644)
 		log.Info("write cache " + cacheFile)
+
 		return ioutil.ReadAll(resp.Body)
 	}
 
-	body, err := getBody()
-	if err != nil {
-		return
+	retry := Retry
+	var body []byte
+	for retry > 0 {
+		body, err = getBody()
+		if err != nil {
+			retry--
+			log.Info(err)
+			log.Info(fmt.Sprintf("%s retry %d", cacheFile, Retry-retry))
+			time.Sleep(time.Second * time.Duration(math.Pow(2, float64(Retry-retry))))
+			if retry == 0 {
+				return
+			}
+			continue
+		}
+		break
 	}
 
 	weight := gjson.GetBytes(body, "measurements.weight")
-	p.Weight = weight.Float()
-	p.NLStatus = true
-	log.Info(weight)
+	p.Weight = weight.Int()
+	log.Info(weight.Int())
+	if weight.Int() != 0 {
+		p.NLStatus = true
+	}
 	return
 }
 
@@ -113,7 +128,7 @@ func (p *Package) TraceCN() (err error) {
 		return
 	}
 
-	getBody := func(cacheFile string) (body []byte, err error) {
+	getBody := func() (body []byte, err error) {
 
 		if _, err = os.Stat(cacheFile); err == nil {
 			body, _ = ioutil.ReadFile(cacheFile)
@@ -175,11 +190,12 @@ func (p *Package) TraceCN() (err error) {
 	retry := Retry
 	var body []byte
 	for retry > 0 {
-		body, err = getBody(cacheFile)
+		body, err = getBody()
 		if err != nil {
 			retry--
+			log.Info(err)
 			log.Info(fmt.Sprintf("%s retry %d", cacheFile, Retry-retry))
-			time.Sleep(time.Second * time.Duration(math.Pow(5, float64(Retry-retry))))
+			time.Sleep(time.Second * time.Duration(math.Pow(2, float64(Retry-retry))))
 			if retry == 0 {
 				return
 			}
